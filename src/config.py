@@ -23,7 +23,7 @@ class Settings(BaseSettings):
             result.append((int(h), int(m)))
         return result
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "env_file_ignore_missing": True}
 
 
 settings = Settings()
