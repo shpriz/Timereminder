@@ -24,7 +24,8 @@ def test_format_schedule():
         ),
     ]
     text = format_schedule(lessons, group="131318")
-    assert "понедельник, 24.02.2026" in text
+    assert "24.02.2026" in text
+    assert "ПОНЕДЕЛЬНИК" in text
     assert "Математика" in text
     assert "Иванов И.И." in text
     assert "08:20–09:55" in text
