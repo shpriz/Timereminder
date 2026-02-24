@@ -21,6 +21,7 @@ from telegram.ext import (
 from src.config import settings
 from src.fetcher import fetch_schedule_html
 from src.formatter import format_schedule
+from src.notifier import send_email
 from src.parser import get_today_lessons, get_tomorrow_lessons, parse_group_name, parse_schedule
 
 logger = logging.getLogger(__name__)
@@ -276,6 +277,22 @@ async def do_schedule(message, chat_id: str, mode: str = "today") -> None:
             text = format_schedule(lessons, group=g["id"], group_name=group_name)
             for i in range(0, len(text), 4096):
                 await message.reply_text(text[i : i + 4096])
+            # Send email if configured
+            email = cfg.get("email", "")
+            if email and settings.smtp_user and settings.smtp_password:
+                try:
+                    subject = f"Расписание {label} — {group_name or g['id']}"
+                    send_email(
+                        subject=subject,
+                        body=text,
+                        smtp_host=settings.smtp_host,
+                        smtp_port=settings.smtp_port,
+                        smtp_user=settings.smtp_user,
+                        smtp_password=settings.smtp_password,
+                        to_email=email,
+                    )
+                except Exception:
+                    logger.exception("Failed to send email to %s", email)
         except Exception:
             logger.exception("Failed to fetch schedule for group %s", g["id"])
             await message.reply_text(f"Ошибка при загрузке группы {g['id']}.")
