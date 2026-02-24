@@ -1,0 +1,13 @@
+services:
+  reminder:
+    build: .
+    container_name: narfu-reminder
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TZ=Europe/Moscow
