@@ -72,9 +72,8 @@ def parse_schedule(html: str, teacher: str = "") -> list[Lesson]:
                 lessons.append(lesson)
 
     if teacher:
-        lessons = [
-            l for l in lessons if teacher.lower() in l.teacher.lower()
-        ]
+        pattern = re.compile(r"\b" + re.escape(teacher.lower()) + r"\b")
+        lessons = [l for l in lessons if pattern.search(l.teacher.lower())]
 
     return lessons
 
