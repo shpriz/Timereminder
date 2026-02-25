@@ -285,7 +285,15 @@ async def do_schedule(message, chat_id: str, mode: str = "today") -> None:
 
     # Send one email with all groups combined
     email = cfg.get("email", "")
-    if email and settings.smtp_user and settings.smtp_password and all_texts:
+    if not email:
+        logger.info("Email not configured for chat %s", chat_id)
+    elif not settings.smtp_user or not settings.smtp_password:
+        logger.warning("SMTP credentials not set (user=%s, pass=%s)",
+                        bool(settings.smtp_user), bool(settings.smtp_password))
+        await message.reply_text("⚠️ SMTP не настроен на сервере.")
+    elif not all_texts:
+        logger.info("No schedule texts to email")
+    else:
         try:
             send_email(
                 subject=f"Расписание {label}",
@@ -296,8 +304,10 @@ async def do_schedule(message, chat_id: str, mode: str = "today") -> None:
                 smtp_password=settings.smtp_password,
                 to_email=email,
             )
-        except Exception:
+            await message.reply_text(f"📧 Письмо отправлено на {email}")
+        except Exception as exc:
             logger.exception("Failed to send email to %s", email)
+            await message.reply_text(f"⚠️ Ошибка отправки email: {exc}")
 
 
 async def do_status(message, chat_id: str) -> None:
