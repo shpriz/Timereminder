@@ -21,7 +21,6 @@ from telegram.ext import (
 from src.config import settings
 from src.fetcher import fetch_schedule_html
 from src.formatter import format_schedule
-from src.notifier import send_email
 from src.parser import get_today_lessons, get_tomorrow_lessons, parse_group_name, parse_schedule
 
 logger = logging.getLogger(__name__)
@@ -80,10 +79,9 @@ async def send_menu(message) -> None:
         ],
         [
             InlineKeyboardButton("👤 Преподаватель", callback_data="teacher"),
-            InlineKeyboardButton("📧 Email", callback_data="setemail"),
+            InlineKeyboardButton("ℹ️ Статус", callback_data="status"),
         ],
         [
-            InlineKeyboardButton("ℹ️ Статус", callback_data="status"),
             InlineKeyboardButton("🔴 Отписаться", callback_data="stop"),
         ],
     ]
@@ -132,12 +130,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await show_remove_group_buttons(query.message, str(update.effective_chat.id))
     elif data == "teacher":
         await show_teacher_group_buttons(query.message, str(update.effective_chat.id))
-    elif data == "setemail":
-        await query.message.reply_text(
-            "Отправь email-адрес для рассылки.\n"
-            "Или отправь 'нет' чтобы отключить."
-        )
-        context.user_data["awaiting"] = "email"
     elif data == "status":
         await do_status(query.message, str(update.effective_chat.id))
     elif data == "stop":
@@ -174,9 +166,6 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if awaiting == "addgroup":
         context.user_data["awaiting"] = ""
         await do_add_group(update.message, chat_id, text)
-    elif awaiting == "email":
-        context.user_data["awaiting"] = ""
-        await do_set_email(update.message, chat_id, text)
     elif awaiting.startswith("teacher:"):
         group_id = awaiting.split(":", 1)[1]
         context.user_data["awaiting"] = ""
@@ -244,18 +233,6 @@ async def do_set_teacher(message, chat_id: str, group_id: str, teacher: str) -> 
     await message.reply_text(f"Группа {group_id}: преподаватель — {label}")
 
 
-async def do_set_email(message, chat_id: str, email: str) -> None:
-    cfg = ensure_migrated(get_user_config(chat_id))
-    if email.lower() in ("нет", "no", "off", ""):
-        cfg["email"] = ""
-        save_user_config(chat_id, cfg)
-        await message.reply_text("Email-рассылка отключена.")
-    else:
-        cfg["email"] = email
-        save_user_config(chat_id, cfg)
-        await message.reply_text(f"Email для рассылки: {email}")
-
-
 async def do_schedule(message, chat_id: str, mode: str = "today") -> None:
     cfg = ensure_migrated(get_user_config(chat_id))
     if not cfg["groups"]:
@@ -283,31 +260,6 @@ async def do_schedule(message, chat_id: str, mode: str = "today") -> None:
             logger.exception("Failed to fetch schedule for group %s", g["id"])
             await message.reply_text(f"Ошибка при загрузке группы {g['id']}.")
 
-    # Send one email with all groups combined
-    email = cfg.get("email", "")
-    if not email:
-        logger.info("Email not configured for chat %s", chat_id)
-    elif not settings.smtp_user or not settings.smtp_password:
-        logger.warning("SMTP credentials not set (user=%s, pass=%s)",
-                        bool(settings.smtp_user), bool(settings.smtp_password))
-        await message.reply_text("⚠️ SMTP не настроен на сервере.")
-    elif not all_texts:
-        logger.info("No schedule texts to email")
-    else:
-        try:
-            send_email(
-                subject=f"Расписание {label}",
-                body="\n\n".join(all_texts),
-                smtp_host=settings.smtp_host,
-                smtp_port=settings.smtp_port,
-                smtp_user=settings.smtp_user,
-                smtp_password=settings.smtp_password,
-                to_email=email,
-            )
-            await message.reply_text(f"📧 Письмо отправлено на {email}")
-        except Exception as exc:
-            logger.exception("Failed to send email to %s", email)
-            await message.reply_text(f"⚠️ Ошибка отправки email: {exc}")
 
 
 async def do_status(message, chat_id: str) -> None:
@@ -320,8 +272,6 @@ async def do_status(message, chat_id: str) -> None:
         groups_text += f"  • {g['id']} (👤 {t})\n"
     if not groups_text:
         groups_text = "  нет групп\n"
-    email = cfg.get("email", "") or "не задан"
-
     keyboard = [
         [
             InlineKeyboardButton("➕ Группа", callback_data="addgroup"),
@@ -329,13 +279,11 @@ async def do_status(message, chat_id: str) -> None:
         ],
         [
             InlineKeyboardButton("👤 Преподаватель", callback_data="teacher"),
-            InlineKeyboardButton("📧 Email", callback_data="setemail"),
         ],
     ]
     await message.reply_text(
         f"Подписка: {subscribed}\n"
         f"Группы:\n{groups_text}"
-        f"Email: {email}\n"
         f"Рассылка: {settings.scan_times}\n"
         f"Часовой пояс: {settings.tz}",
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -388,11 +336,6 @@ async def cmd_teacher(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         await update.message.reply_text("Укажи группу: /teacher <group_id> <фамилия>")
 
 
-async def cmd_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    email = context.args[0] if context.args else ""
-    await do_set_email(update.message, str(update.effective_chat.id), email)
-
-
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await do_status(update.message, str(update.effective_chat.id))
 
@@ -408,7 +351,6 @@ async def post_init(app: Application) -> None:
         BotCommand("addgroup", "Добавить группу"),
         BotCommand("removegroup", "Удалить группу"),
         BotCommand("teacher", "Фильтр по преподавателю"),
-        BotCommand("email", "Настроить email"),
         BotCommand("status", "Текущие настройки"),
         BotCommand("stop", "Отписаться от рассылки"),
     ])
@@ -422,7 +364,6 @@ def create_bot_app() -> Application:
     app.add_handler(CommandHandler("addgroup", cmd_addgroup))
     app.add_handler(CommandHandler("removegroup", cmd_removegroup))
     app.add_handler(CommandHandler("teacher", cmd_teacher))
-    app.add_handler(CommandHandler("email", cmd_email))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler))
