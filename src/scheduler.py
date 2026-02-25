@@ -32,6 +32,7 @@ async def scheduled_send(mode: str = "today") -> None:
     for chat_id, cfg in subs.items():
         cfg = ensure_migrated(cfg)
         email = cfg.get("email", "")
+        all_texts = []
 
         for g in cfg.get("groups", []):
             try:
@@ -43,6 +44,7 @@ async def scheduled_send(mode: str = "today") -> None:
                 all_lessons = parse_schedule(html, teacher=teacher)
                 lessons = filter_by_date(all_lessons, target)
                 text = format_schedule(lessons, group=group_id, group_name=group_name)
+                all_texts.append(text)
 
                 await send_telegram(
                     text,
@@ -51,20 +53,23 @@ async def scheduled_send(mode: str = "today") -> None:
                 )
                 logger.info("Telegram sent to %s for group %s", chat_id, group_id)
 
-                if email and settings.smtp_user:
-                    send_email(
-                        subject=f"Расписание {label} — группа {group_id}",
-                        body=text,
-                        smtp_host=settings.smtp_host,
-                        smtp_port=settings.smtp_port,
-                        smtp_user=settings.smtp_user,
-                        smtp_password=settings.smtp_password,
-                        to_email=email,
-                    )
-                    logger.info("Email sent to %s for group %s", email, group_id)
-
             except Exception:
                 logger.exception("Failed to send group %s to %s", g["id"], chat_id)
+
+        if email and settings.smtp_user and all_texts:
+            try:
+                send_email(
+                    subject=f"Расписание {label}",
+                    body="\n\n".join(all_texts),
+                    smtp_host=settings.smtp_host,
+                    smtp_port=settings.smtp_port,
+                    smtp_user=settings.smtp_user,
+                    smtp_password=settings.smtp_password,
+                    to_email=email,
+                )
+                logger.info("Email sent to %s", email)
+            except Exception:
+                logger.exception("Failed to send email to %s", email)
 
 
 def create_scheduler() -> AsyncIOScheduler:

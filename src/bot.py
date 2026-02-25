@@ -265,6 +265,7 @@ async def do_schedule(message, chat_id: str, mode: str = "today") -> None:
     label = "на сегодня" if mode == "today" else "на завтра"
     await message.reply_text(f"Загружаю расписание {label}...")
 
+    all_texts = []
     for g in cfg["groups"]:
         try:
             html = await fetch_schedule_html(g["id"])
@@ -275,27 +276,28 @@ async def do_schedule(message, chat_id: str, mode: str = "today") -> None:
             else:
                 lessons = get_today_lessons(all_lessons)
             text = format_schedule(lessons, group=g["id"], group_name=group_name)
+            all_texts.append(text)
             for i in range(0, len(text), 4096):
                 await message.reply_text(text[i : i + 4096])
-            # Send email if configured
-            email = cfg.get("email", "")
-            if email and settings.smtp_user and settings.smtp_password:
-                try:
-                    subject = f"Расписание {label} — {group_name or g['id']}"
-                    send_email(
-                        subject=subject,
-                        body=text,
-                        smtp_host=settings.smtp_host,
-                        smtp_port=settings.smtp_port,
-                        smtp_user=settings.smtp_user,
-                        smtp_password=settings.smtp_password,
-                        to_email=email,
-                    )
-                except Exception:
-                    logger.exception("Failed to send email to %s", email)
         except Exception:
             logger.exception("Failed to fetch schedule for group %s", g["id"])
             await message.reply_text(f"Ошибка при загрузке группы {g['id']}.")
+
+    # Send one email with all groups combined
+    email = cfg.get("email", "")
+    if email and settings.smtp_user and settings.smtp_password and all_texts:
+        try:
+            send_email(
+                subject=f"Расписание {label}",
+                body="\n\n".join(all_texts),
+                smtp_host=settings.smtp_host,
+                smtp_port=settings.smtp_port,
+                smtp_user=settings.smtp_user,
+                smtp_password=settings.smtp_password,
+                to_email=email,
+            )
+        except Exception:
+            logger.exception("Failed to send email to %s", email)
 
 
 async def do_status(message, chat_id: str) -> None:
